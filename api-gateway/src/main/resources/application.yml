@@ -1,0 +1,58 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:changeme_redis_2024}
+  cloud:
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 10
+            redis-rate-limiter.burstCapacity: ${RATE_LIMIT_REQUESTS_PER_MINUTE:100}
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@ipKeyResolver}"
+        - AddRequestHeader=X-Gateway-Timestamp, #{T(java.time.Instant).now().toString()}
+      routes:
+        - id: inventory-service
+          uri: ${INVENTORY_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/inventory/**,/api/products/**
+        - id: recommendation-service
+          uri: ${RECOMMENDATION_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/recommend/**,/recommend/**,/similar/**,/embed
+        - id: forecasting-service
+          uri: ${FORECASTING_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/forecast/**,/forecast/**
+        - id: pricing-service
+          uri: ${PRICING_SERVICE_URL:http://localhost:8084}
+          predicates:
+            - Path=/api/pricing/**
+        - id: websocket-gateway
+          uri: ${WEBSOCKET_GATEWAY_URL:http://localhost:8085}
+          predicates:
+            - Path=/ws/**
+        - id: analytics-service
+          uri: ${ANALYTICS_SERVICE_URL:http://localhost:8086}
+          predicates:
+            - Path=/api/analytics/**,/api/audit/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,gateway
+  endpoint:
+    gateway:
+      enabled: true
+  metrics:
+    tags:
+      application: api-gateway

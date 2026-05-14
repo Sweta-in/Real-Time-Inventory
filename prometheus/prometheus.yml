@@ -1,0 +1,51 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'inventory-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['inventory-service:8081']
+    scrape_interval: 10s
+
+  - job_name: 'pricing-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['pricing-service:8084']
+    scrape_interval: 10s
+
+  - job_name: 'websocket-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['websocket-gateway:8085']
+    scrape_interval: 10s
+
+  - job_name: 'analytics-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['analytics-service:8086']
+    scrape_interval: 10s
+
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['api-gateway:8080']
+    scrape_interval: 10s
+
+  - job_name: 'recommendation-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['recommendation-service:8082']
+    scrape_interval: 10s
+
+  - job_name: 'forecasting-service'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['forecasting-service:8083']
+    scrape_interval: 10s

@@ -1,0 +1,74 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 20 } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Cache Hit/Miss Ratio",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(inventory_cache_hits_total[5m])", "legendFormat": "hits/s", "refId": "A" },
+        { "expr": "rate(inventory_cache_misses_total[5m])", "legendFormat": "misses/s", "refId": "B" },
+        { "expr": "rate(inventory_cache_hits_total[5m]) / (rate(inventory_cache_hits_total[5m]) + rate(inventory_cache_misses_total[5m]))", "legendFormat": "hit ratio", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Kafka Publish Latency",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(kafka_publish_latency_seconds_bucket[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(kafka_publish_latency_seconds_bucket[5m]))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(kafka_publish_latency_seconds_bucket[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Inventory Operations/min",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum(rate(api_request_duration_seconds_count{uri=~\"/api/inventory/.*/sell\"}[1m])) * 60", "legendFormat": "sells/min", "refId": "A" },
+        { "expr": "sum(rate(api_request_duration_seconds_count{uri=~\"/api/inventory/.*/restock\"}[1m])) * 60", "legendFormat": "restocks/min", "refId": "B" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "title": "Low Stock Alerts (total)",
+      "type": "stat",
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "low_stock_alerts_total", "refId": "A" }]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 5,
+      "title": "API Latency (inventory-service)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(api_request_duration_seconds_bucket{job=\"inventory-service\"}[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(api_request_duration_seconds_bucket{job=\"inventory-service\"}[5m]))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(api_request_duration_seconds_bucket{job=\"inventory-service\"}[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["inventory"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Inventory Dashboard",
+  "uid": "inventory-dashboard",
+  "version": 1
+}

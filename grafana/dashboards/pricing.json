@@ -1,0 +1,62 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15 } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Price Recalculations by Reason",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(pricing_recalculations_total{reason=\"SCARCITY_PREMIUM\"}[5m])", "legendFormat": "Scarcity Premium", "refId": "A" },
+        { "expr": "rate(pricing_recalculations_total{reason=\"CLEARANCE_NUDGE\"}[5m])", "legendFormat": "Clearance Nudge", "refId": "B" },
+        { "expr": "rate(pricing_recalculations_total{reason=\"DEMAND_SURGE\"}[5m])", "legendFormat": "Demand Surge", "refId": "C" },
+        { "expr": "rate(pricing_recalculations_total{reason=\"SLOW_MOVER\"}[5m])", "legendFormat": "Slow Mover", "refId": "D" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Price Changes/min",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "sum(rate(pricing_recalculations_total[1m])) * 60", "legendFormat": "recalcs/min", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Pricing API Latency",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(api_request_duration_seconds_bucket{job=\"pricing-service\"}[5m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(api_request_duration_seconds_bucket{job=\"pricing-service\"}[5m]))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(api_request_duration_seconds_bucket{job=\"pricing-service\"}[5m]))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "bars", "fillOpacity": 50 } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 4,
+      "title": "Rule Trigger Distribution",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "pricing_recalculations_total", "legendFormat": "{{reason}}", "refId": "A" }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["pricing"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Pricing Dashboard",
+  "uid": "pricing-dashboard",
+  "version": 1
+}
