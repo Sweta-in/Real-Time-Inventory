@@ -336,6 +336,43 @@ services:
     networks:
       - app-network
 
+  reorder-agent-service:
+    build:
+      context: ./reorder-agent-service
+      dockerfile: Dockerfile
+    container_name: reorder-agent-service
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app_user}:${POSTGRES_PASSWORD:-changeme_postgres_2024}@postgres:5432/${POSTGRES_DB:-inventory_db}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      INVENTORY_SERVICE_URL: http://inventory-service:8081
+      FORECASTING_SERVICE_URL: http://forecasting-service:8083
+      PRICING_SERVICE_URL: http://pricing-service:8084
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      AGENT_RUN_INTERVAL_HOURS: ${AGENT_RUN_INTERVAL_HOURS:-6}
+      SUPPLIER_LEAD_TIME_DAYS: ${SUPPLIER_LEAD_TIME_DAYS:-3}
+      MAX_REORDER_BUDGET_USD: ${MAX_REORDER_BUDGET_USD:-5000}
+      PORT: 8087
+    ports:
+      - "${REORDER_AGENT_PORT:-8087}:8087"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      forecasting-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8087/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app-network
+
   api-gateway:
     build:
       context: ./api-gateway
@@ -351,6 +388,7 @@ services:
       PRICING_SERVICE_URL: http://pricing-service:8084
       WEBSOCKET_GATEWAY_URL: http://websocket-gateway:8085
       ANALYTICS_SERVICE_URL: http://analytics-service:8086
+      REORDER_AGENT_SERVICE_URL: http://reorder-agent-service:8087
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-100}
       SERVER_PORT: 8080
     ports:
@@ -369,6 +407,8 @@ services:
       websocket-gateway:
         condition: service_healthy
       analytics-service:
+        condition: service_healthy
+      reorder-agent-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]

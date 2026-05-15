@@ -17,7 +17,7 @@
 
 ## 📋 Project Summary
 
-A **production-grade, event-driven microservices platform** that manages real-time inventory across multiple warehouses, delivers ML-powered product recommendations, forecasts demand using time-series models, and adjusts pricing dynamically — all orchestrated through Apache Kafka with sub-200ms P95 latency at scale. The system serves as an end-to-end demonstration of distributed systems engineering: it combines **reactive Spring Boot services** with **Python ML microservices**, implements **cache-aside with Redis**, **full-text and semantic vector search via Elasticsearch**, **circuit breaker fault tolerance**, **A/B testing infrastructure**, and **real-time WebSocket push** — the exact architectural patterns used by companies like Walmart, Amazon, and Target to power inventory and pricing at scale. Every stock mutation is captured in an append-only audit log, every request is traced via correlation IDs, and the entire stack is observable through Prometheus metrics and pre-provisioned Grafana dashboards.
+A **production-grade, event-driven microservices platform** that manages real-time inventory across multiple warehouses, delivers ML-powered product recommendations, forecasts demand using time-series models, adjusts pricing dynamically, and deploys an **LLM-powered autonomous reorder agent** — all orchestrated through Apache Kafka with sub-200ms P95 latency at scale. The system serves as an end-to-end demonstration of distributed systems engineering: it combines **reactive Spring Boot services** with **Python ML microservices**, implements **cache-aside with Redis**, **full-text and semantic vector search via Elasticsearch**, **circuit breaker fault tolerance**, **A/B testing infrastructure**, **real-time WebSocket push**, and an **Agentic AI Reorder Bot** using the ReAct (Reasoning + Acting) pattern with Groq's LLaMA 3.3 70B. Every stock mutation is captured in an append-only audit log, every request is traced via correlation IDs, and the entire stack is observable through Prometheus metrics and pre-provisioned Grafana dashboards.
 
 ---
 
@@ -81,6 +81,7 @@ A **production-grade, event-driven microservices platform** that manages real-ti
 3. **Low stock** → `inventory-service` publishes `low-stock-alerts` → `websocket-gateway` broadcasts alert
 4. **Demand forecast** → `forecasting-service` runs Prophet → publishes `restock-recommendations` → `inventory-service` auto-restocks
 5. **Recommendations** → `recommendation-service` serves SVD predictions with A/B group → logs to `ab-test-events` → `analytics-service` computes CTR
+6. **Autonomous Reorder** → `reorder-agent-service` (LLM agent) calls `get_forecast` → `get_inventory` → reasons about lead times & budget → `execute_restock` → publishes `reorder-decisions` Kafka topic
 
 ---
 
@@ -95,6 +96,7 @@ A **production-grade, event-driven microservices platform** that manages real-ti
 | **pricing-service** | Spring Boot 3 | Dynamic pricing rules engine | 8084 |
 | **websocket-gateway** | Spring Boot WebFlux, STOMP | Real-time push to clients | 8085 |
 | **analytics-service** | Spring Boot 3 | A/B testing, audit log API | 8086 |
+| **reorder-agent-service** | Python FastAPI, Groq LLaMA 3.3 70B | Autonomous ReAct reorder agent | 8087 |
 | **PostgreSQL** | PostgreSQL 15 | Persistent relational storage | 5432 |
 | **Redis** | Redis 7.2 | Cache, pub/sub, rate limiting | 6379 |
 | **Kafka** | Apache Kafka 3.6 | Async event streaming | 9092 |
@@ -130,6 +132,10 @@ A **production-grade, event-driven microservices platform** that manages real-ti
 | GitHub Actions CI/CD | ✅ Done | Parallel test, lint, build, push |
 | Docker Compose orchestration | ✅ Done | Health checks, depends_on for all services |
 | OpenAPI / Swagger UI | ✅ Done | Springdoc auto-generated docs |
+| Agentic AI Reorder Bot | ✅ Done | ReAct loop with Groq LLaMA 3.3 70B |
+| LLM tool-calling (manual ReAct) | ✅ Done | TOOL_CALL / FINAL_DECISION parsing |
+| Agent decision audit trail (JSONB) | ✅ Done | Full reasoning trace stored per run |
+| Agent Grafana dashboard | ✅ Done | Decisions, Groq API calls, token usage |
 
 ---
 
@@ -168,6 +174,7 @@ curl http://localhost:8080/api/recommend/health
 curl http://localhost:8080/api/forecast/health
 curl http://localhost:8080/api/pricing/health
 curl http://localhost:8080/api/analytics/health
+curl http://localhost:8087/health
 ```
 
 ### Service URLs
@@ -180,6 +187,7 @@ curl http://localhost:8080/api/analytics/health
 | Grafana | http://localhost:3000 (admin/admin) |
 | Prometheus | http://localhost:9090 |
 | Elasticsearch | http://localhost:9200 |
+| Reorder Agent | http://localhost:8087 |
 
 ---
 
@@ -232,6 +240,16 @@ curl http://localhost:8080/api/analytics/health
 | `GET` | `/api/analytics/experiment/results` | — | `ExperimentResults` | A vs B CTR + chi-squared |
 | `GET` | `/api/audit/inventory?page=0&size=20` | — | `Page<AuditLogResponse>` | Paginated audit log |
 | `GET` | `/api/audit/pricing?page=0&size=20` | — | `Page<PriceAuditResponse>` | Paginated price log |
+
+### Reorder Agent Service
+
+| Method | Path | Request Body | Response | Notes |
+|--------|------|-------------|----------|-------|
+| `POST` | `/trigger` | `{"product_id": "uuid"}` (optional) | `AgentResult` | Manually trigger agent — full scan if no product_id |
+| `GET` | `/decisions?limit=10&product_id=` | — | `List<AgentDecision>` | Decision logs with full reasoning traces |
+| `GET` | `/decisions/{decision_id}` | — | `AgentDecision` | Single decision detail with JSONB trace |
+| `GET` | `/health` | — | `{"status": "healthy"}` | Health check + Groq config status |
+| `GET` | `/metrics` | — | Prometheus text | `reorder_decisions_total`, `groq_api_calls_total`, etc. |
 
 ---
 
@@ -466,23 +484,113 @@ Every request entering the api-gateway receives a `X-Correlation-ID` (UUID). Thi
 
 ---
 
-## 🎯 Walmart Interview Talking Points
+## 🤖 Agentic AI Reorder Bot
 
-1. **Event-Driven Architecture at Scale**: "I designed the system around Apache Kafka for all inter-service communication. This decouples services temporally and enables fan-out — a single inventory update event triggers pricing recalculation, WebSocket push, and audit logging without the producer knowing about any consumer."
+The `reorder-agent-service` is an **LLM-powered autonomous agent** that uses the **ReAct (Reasoning + Acting) pattern** to analyze demand, check inventory, and autonomously execute restocking decisions — with full reasoning transparency.
 
-2. **Cache-Aside with Consistency Guarantees**: "I implemented Redis cache-aside with pub/sub invalidation. On every stock mutation, a cache invalidation message is broadcast, ensuring all service instances see fresh data. If Redis fails, the system degrades gracefully to direct PostgreSQL reads — no downtime."
+### Architecture
 
-3. **ML-Powered Demand Forecasting**: "The forecasting service uses Facebook Prophet on historical purchase data to predict 7-day demand. When predicted demand exceeds current stock, it automatically publishes restock recommendations via Kafka — turning a reactive system into a proactive one."
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ReAct Agent Loop                              │
+│                                                                 │
+│  ┌──────────┐    ┌───────────┐    ┌──────────────┐              │
+│  │ Groq LLM │◄──►│  Agent    │◄──►│ Tool         │              │
+│  │ LLaMA 3.3│    │  Parser   │    │ Executor     │              │
+│  │ 70B      │    │ TOOL_CALL │    │              │              │
+│  └──────────┘    │ FINAL_DEC │    │ get_forecast │              │
+│                  └───────────┘    │ get_inventory│              │
+│                                   │ get_slow_mov │              │
+│       ┌────────────────┐          │ calc_reorder │              │
+│       │ PostgreSQL     │          │ exec_restock │              │
+│       │ (JSONB trace)  │          └──────┬───────┘              │
+│       └────────────────┘                 │                      │
+│              ▲                           ▼                      │
+│              │                  ┌────────────────┐              │
+│              └──────────────────│ Kafka Producer  │              │
+│                                 │ reorder-decisions│             │
+│                                 └────────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-4. **Dynamic Pricing Engine**: "I built a composable pricing rules engine with four multiplier rules (scarcity, clearance, demand surge, slow-mover). Rules are triggered asynchronously via Kafka events, and all price changes are logged to an append-only audit table for compliance."
+### How It Works
 
-5. **Semantic Search with Vector Embeddings**: "Products are embedded using sentence-transformers and stored as dense vectors in Elasticsearch. At query time, the user's search is embedded and matched via cosine similarity — this returns semantically relevant results even when exact keywords don't match."
+The agent implements **manual tool calling** since Groq's free tier doesn't have native function calling. The LLM responds with structured text that the agent parser extracts:
 
-6. **Circuit Breaker Fault Tolerance**: "All outbound calls use Resilience4j circuit breakers. When the recommendation service goes down, the system falls back to a cached bestsellers list from Redis. The breaker prevents cascade failures and self-heals after 30 seconds."
+1. **TOOL_CALL**: `{"tool": "get_forecast", "args": {"product_id": "..."}}` — parsed and executed
+2. **FINAL_DECISION**: `{"action": "reorder", "summary": "...", "reorders": [...]}` — terminates the loop
 
-7. **A/B Testing Infrastructure**: "I built end-to-end A/B testing: users are assigned to experiment groups via headers, the recommendation service serves different algorithms per group, click events are logged to Kafka, and the analytics service computes CTR with chi-squared significance testing."
+### Available Tools
 
-8. **Observability-First Design**: "Every service exposes Prometheus metrics including custom histograms (API latency, Kafka publish latency) and counters (cache hits, alerts). Four pre-provisioned Grafana dashboards provide real-time visibility. Every log line is structured JSON with correlation IDs for distributed tracing."
+| Tool | Description | Calls |
+|------|-------------|-------|
+| `get_forecast` | Fetches Prophet demand predictions from forecasting-service | `GET /forecast/{id}` |
+| `get_inventory` | Checks stock levels across warehouses from inventory-service | `GET /api/inventory/{id}` |
+| `get_slow_movers` | Lists products with low velocity from pricing-service | `GET /api/pricing/slow-movers` |
+| `calculate_reorder_quantity` | EOQ model with safety stock, lead time, and budget constraints | Local computation |
+| `execute_restock` | Actually restocks a product in a warehouse | `POST /api/inventory/{id}/restock` |
+
+### Sample Reasoning Trace
+
+```json
+[
+  {
+    "step": 1,
+    "type": "tool_call",
+    "tool_name": "get_slow_movers",
+    "content": "Thought: Before analyzing any products, I should check which ones are slow movers to avoid restocking them..."
+  },
+  {
+    "step": 1,
+    "type": "observation",
+    "tool_name": "get_slow_movers",
+    "result": {"slow_movers": [], "count": 0}
+  },
+  {
+    "step": 2,
+    "type": "tool_call",
+    "tool_name": "get_forecast",
+    "tool_args": {"product_id": "abc-123", "days": 7},
+    "content": "Thought: No slow movers found. Let me check demand for product abc-123..."
+  },
+  {
+    "step": 2,
+    "type": "observation",
+    "result": {"predicted_demand_7d": 142.5}
+  },
+  {
+    "step": 3,
+    "type": "tool_call",
+    "tool_name": "get_inventory",
+    "content": "Thought: Predicted demand is 142 units but current stock is only 30. This product needs restocking..."
+  },
+  {
+    "step": 5,
+    "type": "final_decision",
+    "decision": {
+      "action": "reorder",
+      "summary": "Restocked product abc-123 with 85 units based on 7-day demand forecast of 142 units",
+      "reorders": [{"product_id": "abc-123", "quantity": 85, "cost": "$510.00"}]
+    }
+  }
+]
+```
+
+### Groq Integration
+
+- **Model**: `llama-3.3-70b-versatile` (best reasoning on Groq's free tier)
+- **Context window**: 8192 tokens — earlier steps are auto-compressed if the trace grows too long
+- **Rate limiting**: Exponential backoff (2s → 4s → 8s) with 3 retries on 429 errors
+- **Auth**: `GROQ_API_KEY` environment variable (get a free key at [console.groq.com](https://console.groq.com))
+
+### Prometheus Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `reorder_decisions_total{action}` | Counter | Decisions by action (reorder/no_action/timeout) |
+| `agent_reasoning_latency_seconds` | Histogram | End-to-end agent reasoning latency |
+| `groq_api_calls_total` | Counter | Total Groq API calls |
+| `groq_tokens_used_total{type}` | Counter | Token usage (prompt/completion) |
 
 ---
 
@@ -493,7 +601,6 @@ Every request entering the api-gateway receives a `X-Correlation-ID` (UUID). Thi
 - **Kubernetes + Helm Charts** — Production orchestration with horizontal pod autoscaling, rolling deployments, and service mesh (Istio)
 - **GraphQL API Layer** — Unified query interface allowing clients to fetch inventory + pricing + recommendations in a single request
 - **Feature Store (Feast)** — Centralized feature management for ML models, ensuring training-serving consistency
-- **Agentic AI Reorder Bot** — LLM-powered agent that analyzes demand forecasts, supplier lead times, and budget constraints to autonomously place optimal restock orders
 
 ---
 

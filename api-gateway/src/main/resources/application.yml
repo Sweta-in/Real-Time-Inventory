@@ -44,6 +44,10 @@ spring:
           uri: ${ANALYTICS_SERVICE_URL:http://localhost:8086}
           predicates:
             - Path=/api/analytics/**,/api/audit/**
+        - id: reorder-agent-service
+          uri: ${REORDER_AGENT_SERVICE_URL:http://localhost:8087}
+          predicates:
+            - Path=/api/agent/**,/trigger,/decisions/**
 
 management:
   endpoints:
